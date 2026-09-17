@@ -22,19 +22,34 @@ public final class AskpassHelper {
             return siblingAskpass
         }
 
-        // 3. Fallback: Check or create in Application Support/PortBar/bin
-        guard let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            return nil
+        // 3. Check inside standard build bundle
+        let localBundlePath = "build/PortBar.app/Contents/Resources/portbar-askpass"
+        if fileManager.isExecutableFile(atPath: localBundlePath) {
+            return URL(fileURLWithPath: localBundlePath).path
         }
-        let binDir = appSupport.appendingPathComponent("PortBar/bin", isDirectory: true)
+
+        // 4. Fallback: Check or create in Application Support/PortBar/bin or local .portbar/bin
+        var binDir: URL
+        if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            let candidate = appSupport.appendingPathComponent("PortBar/bin", isDirectory: true)
+            if (try? fileManager.createDirectory(at: candidate, withIntermediateDirectories: true)) != nil && fileManager.isWritableFile(atPath: candidate.path) {
+                binDir = candidate
+            } else {
+                let localDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".portbar/bin", isDirectory: true)
+                try? fileManager.createDirectory(at: localDir, withIntermediateDirectories: true)
+                binDir = localDir
+            }
+        } else {
+            let localDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".portbar/bin", isDirectory: true)
+            try? fileManager.createDirectory(at: localDir, withIntermediateDirectories: true)
+            binDir = localDir
+        }
+
         let targetBinary = binDir.appendingPathComponent("portbar-askpass")
 
         if fileManager.isExecutableFile(atPath: targetBinary.path) {
             return targetBinary.path
         }
-
-        // Ensure directory exists
-        try? fileManager.createDirectory(at: binDir, withIntermediateDirectories: true)
 
         // Compile or write askpass binary on the fly
         let cCode = """

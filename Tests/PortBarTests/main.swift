@@ -60,8 +60,11 @@ print("✅ [1/4] 模型独立管理与 1:N 映射关系测试通过！")
 
 // 2. Test Askpass bridge
 print("▶️ [2/4] 测试 askpass 桥接程序...")
-let askpassPath = "build/PortBar.app/Contents/Resources/portbar-askpass"
-assert(FileManager.default.isExecutableFile(atPath: askpassPath), "askpass binary should be executable")
+guard let askpassPath = AskpassHelper.shared.getAskpassBinaryPath(),
+      FileManager.default.isExecutableFile(atPath: askpassPath) else {
+    print("❌ ASSERTION FAILED: AskpassHelper should return an executable askpass binary")
+    exit(1)
+}
 
 let testPassword = "MyStr0ng!P@ssw0rd'\"$\\nSpecial"
 let proc = Process()

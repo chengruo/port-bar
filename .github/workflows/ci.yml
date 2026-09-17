@@ -24,6 +24,11 @@ jobs:
           swift --version
           clang --version
 
+      - name: Build PortBar.app
+        run: |
+          chmod +x scripts/build.sh
+          ./scripts/build.sh
+
       - name: Run Automated Tests
         run: |
           swiftc \
@@ -39,11 +44,6 @@ jobs:
             -o Tests/run_tests
           ./Tests/run_tests
           rm -f Tests/run_tests
-
-      - name: Build PortBar.app
-        run: |
-          chmod +x scripts/build.sh
-          ./scripts/build.sh
 
       - name: Package Release Archive
         run: |

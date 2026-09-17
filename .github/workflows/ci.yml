@@ -1,0 +1,70 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Build & Test (macOS)
+    runs-on: macos-14
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Verify Environment
+        run: |
+          swift --version
+          clang --version
+
+      - name: Run Automated Tests
+        run: |
+          swiftc \
+            -module-cache-path .cache \
+            -Xcc -fmodules-cache-path=.cache \
+            Sources/PortBar/Models/TunnelStatus.swift \
+            Sources/PortBar/Models/SSHHost.swift \
+            Sources/PortBar/Models/PortMapping.swift \
+            Sources/PortBar/Helpers/AskpassHelper.swift \
+            Sources/PortBar/Services/NetworkDetector.swift \
+            Sources/PortBar/Services/ConfigStore.swift \
+            Tests/PortBarTests/main.swift \
+            -o Tests/run_tests
+          ./Tests/run_tests
+          rm -f Tests/run_tests
+
+      - name: Build PortBar.app
+        run: |
+          chmod +x scripts/build.sh
+          ./scripts/build.sh
+
+      - name: Package Release Archive
+        run: |
+          cd build
+          ditto -c -k --sequesterRsrc --keepParent PortBar.app PortBar-macOS.zip
+          shasum -a 256 PortBar-macOS.zip > PortBar-macOS.zip.sha256
+          cd ..
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PortBar-macOS
+          path: |
+            build/PortBar-macOS.zip
+            build/PortBar-macOS.zip.sha256
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/PortBar-macOS.zip
+            build/PortBar-macOS.zip.sha256
+          generate_release_notes: true

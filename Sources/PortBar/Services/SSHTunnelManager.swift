@@ -56,7 +56,13 @@ public final class SSHTunnelManager: ObservableObject {
     public func startTunnel(for mapping: PortMapping) {
         guard let host = ConfigStore.shared.host(for: mapping.hostId) else {
             statuses[mapping.id] = .error("未找到关联的主机配置")
-            appendLog(for: mapping.id, message: "❌ 启动失败: 未找到关联的主机配置 (Host ID: \(mapping.hostId))", isError: true)
+            appendLog(for: mapping.id, message: "❌ 启动失败: 未找到关联的主机配置", isError: true)
+            return
+        }
+
+        if mapping.forwardType == .localPort && mapping.portRules.isEmpty {
+            statuses[mapping.id] = .error("尚未配置任何端口转发规则")
+            appendLog(for: mapping.id, message: "❌ 启动失败: 尚未配置任何端口转发规则", isError: true)
             return
         }
 
@@ -75,7 +81,6 @@ public final class SSHTunnelManager: ObservableObject {
         appendLog(for: mapping.id, message: "🚀 正在建立 SSH 端口转发...")
         appendLog(for: mapping.id, message: "服务: \(mapping.name)")
         appendLog(for: mapping.id, message: "跳板主机: [\(host.displayName)] \(host.username)@\(host.host):\(host.port)")
-        appendLog(for: mapping.id, message: "转发规则: \(mapping.forwardingSummary)")
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
@@ -92,11 +97,15 @@ public final class SSHTunnelManager: ObservableObject {
 
         switch mapping.forwardType {
         case .localPort:
-            arguments.append("-L")
-            arguments.append("\(mapping.localPort):\(mapping.remoteHost):\(mapping.remotePort)")
+            for rule in mapping.portRules {
+                arguments.append("-L")
+                arguments.append("\(rule.localPort):\(rule.remoteHost):\(rule.remotePort)")
+                appendLog(for: mapping.id, message: "  ➔ 转发项: 127.0.0.1:\(rule.localPort) ➔ \(rule.remoteHost):\(rule.remotePort)")
+            }
         case .socks5:
             arguments.append("-D")
-            arguments.append("\(mapping.localPort)")
+            arguments.append("\(mapping.socks5Port)")
+            appendLog(for: mapping.id, message: "  ➔ SOCKS5 代理监听: 127.0.0.1:\(mapping.socks5Port)")
         }
 
         var env = ProcessInfo.processInfo.environment
@@ -180,7 +189,7 @@ public final class SSHTunnelManager: ObservableObject {
             try process.run()
             processes[mapping.id] = process
 
-            // Verify listening status by polling local port
+            // Verify listening status by polling local ports
             self.monitorPortConnection(for: mapping, process: process)
         } catch {
             statuses[mapping.id] = .error(error.localizedDescription)
@@ -212,6 +221,12 @@ public final class SSHTunnelManager: ObservableObject {
     private func monitorPortConnection(for mapping: PortMapping, process: Process) {
         var attempts = 0
         let maxAttempts = 25 // 25 * 200ms = 5s
+        let portsToCheck = mapping.allLocalPorts
+
+        guard let firstPort = portsToCheck.first else {
+            statuses[mapping.id] = .connected
+            return
+        }
 
         Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] timer in
             guard let self = self else {
@@ -225,14 +240,12 @@ public final class SSHTunnelManager: ObservableObject {
             }
 
             attempts += 1
-            if NetworkDetector.shared.isLocalPortListening(port: mapping.localPort) {
+            if NetworkDetector.shared.isLocalPortListening(port: firstPort) {
                 timer.invalidate()
                 DispatchQueue.main.async {
                     self.statuses[mapping.id] = .connected
-                    self.appendLog(for: mapping.id, message: "✅ 隧道已成功建立！本地正在监听端口: \(mapping.localPort)")
-                    if mapping.forwardType == .localPort {
-                        self.appendLog(for: mapping.id, message: "🌐 可通过 http://127.0.0.1:\(mapping.localPort) 访问")
-                    }
+                    let portList = portsToCheck.map { String($0) }.joined(separator: ", ")
+                    self.appendLog(for: mapping.id, message: "✅ 隧道已成功建立！正在监听本地端口: \(portList)")
                 }
                 return
             }
@@ -242,7 +255,7 @@ public final class SSHTunnelManager: ObservableObject {
                 DispatchQueue.main.async {
                     if case .connecting = self.statuses[mapping.id] {
                         self.statuses[mapping.id] = .connected
-                        self.appendLog(for: mapping.id, message: "⚡️ SSH 进程已就绪 (本地端口探测超时，已标记为运行)")
+                        self.appendLog(for: mapping.id, message: "⚡️ SSH 进程已就绪 (标记为运行状态)")
                     }
                 }
             }

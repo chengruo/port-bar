@@ -227,8 +227,8 @@ public struct HostManagerView: View {
         let q = searchText.lowercased()
         return configStore.mappings.filter {
             $0.name.lowercased().contains(q) ||
-            String($0.localPort).contains(q) ||
-            String($0.remotePort).contains(q) ||
+            $0.forwardingSummary.lowercased().contains(q) ||
+            $0.portRules.contains(where: { String($0.localPort).contains(q) || String($0.remotePort).contains(q) }) ||
             (configStore.host(for: $0.hostId)?.displayName.lowercased().contains(q) ?? false)
         }
     }
@@ -326,7 +326,7 @@ public struct HostManagerView: View {
                     Text("[\(hostName)]")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(.blue)
-                    Text(":\(mapping.localPort) ➔ :\(mapping.remotePort)")
+                    Text(mapping.forwardingSummary)
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
@@ -505,13 +505,13 @@ public struct HostManagerView: View {
     }
 
     private func addNewMapping() {
-        let nextPort = (configStore.mappings.map { $0.localPort }.max() ?? 8080) + 1
+        let maxExisting = configStore.mappings.flatMap { $0.portRules.map { max($0.localPort, $0.remotePort) } }.max() ?? 8079
+        let nextPort = maxExisting + 1
         let defaultHostId = configStore.hosts.first?.id ?? UUID()
         let newMapping = PortMapping(
             name: "端口映射 \(configStore.mappings.count + 1)",
             hostId: defaultHostId,
-            localPort: nextPort,
-            remotePort: 8080
+            portRules: [PortRule(localPort: nextPort, remotePort: nextPort)] // default localPort = remotePort!
         )
         configStore.addMapping(newMapping)
         selectedMappingId = newMapping.id

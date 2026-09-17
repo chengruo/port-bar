@@ -66,10 +66,11 @@ public final class ConfigStore: ObservableObject {
                 name: "Web 管理后台",
                 hostId: demoHost.id,
                 forwardType: .localPort,
-                localPort: 8080,
-                remotePort: 8080,
-                remoteHost: "127.0.0.1",
-                notes: "访问本地 8080 端口即可转发至远端 8080"
+                portRules: [
+                    PortRule(localPort: 8080, remotePort: 8080),
+                    PortRule(localPort: 3306, remotePort: 3306)
+                ],
+                notes: "示例端口转发，已配置 8080 和 3306 端口"
             )
             mappings = [demoMapping]
 
@@ -161,7 +162,11 @@ public final class ConfigStore: ObservableObject {
         var copy = original
         copy.id = UUID()
         copy.name = "\(original.name) (副本)"
-        copy.localPort = (mappings.map { $0.localPort }.max() ?? original.localPort) + 1
+        let maxExisting = mappings.flatMap { $0.portRules.map { max($0.localPort, $0.remotePort) } }.max() ?? 8080
+        let offset = max(1, maxExisting + 1 - (original.portRules.first?.localPort ?? 8080))
+        copy.portRules = original.portRules.map {
+            PortRule(localPort: $0.localPort + offset, remotePort: $0.remotePort, remoteHost: $0.remoteHost)
+        }
         copy.createdAt = Date()
         copy.updatedAt = Date()
         mappings.append(copy)

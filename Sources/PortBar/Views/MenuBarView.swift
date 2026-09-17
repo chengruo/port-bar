@@ -165,36 +165,64 @@ public struct MenuBarView: View {
             }
 
             // Quick open link if connected
-            if status.isConnected && mapping.forwardType == .localPort, let url = mapping.localURL {
-                HStack(spacing: 8) {
-                    Button(action: {
-                        NSWorkspace.shared.open(url)
-                    }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "link")
-                                .font(.system(size: 10))
-                            Text("打开 http://127.0.0.1:\(mapping.localPort)")
-                                .font(.system(size: 10, design: .monospaced))
+            if status.isConnected && mapping.forwardType == .localPort {
+                let urls = mapping.localURLs
+                if urls.count == 1, let first = urls.first {
+                    HStack(spacing: 8) {
+                        Button(action: {
+                            NSWorkspace.shared.open(first.url)
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "link")
+                                    .font(.system(size: 10))
+                                Text("打开 http://127.0.0.1:\(first.port)")
+                                    .font(.system(size: 10, design: .monospaced))
+                            }
+                            .foregroundColor(.accentColor)
                         }
-                        .foregroundColor(.accentColor)
+                        .buttonStyle(.plain)
+
+                        Spacer()
+
+                        Button(action: {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString("http://127.0.0.1:\(first.port)", forType: .string)
+                        }) {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("复制本地地址")
                     }
-                    .buttonStyle(.plain)
-
-                    Spacer()
-
-                    Button(action: {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString("http://127.0.0.1:\(mapping.localPort)", forType: .string)
-                    }) {
-                        Image(systemName: "doc.on.doc")
+                    .padding(.leading, 19)
+                    .padding(.top, 2)
+                } else if urls.count > 1 {
+                    HStack(spacing: 6) {
+                        Image(systemName: "safari")
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
+
+                        ForEach(urls, id: \.port) { item in
+                            Button(action: {
+                                NSWorkspace.shared.open(item.url)
+                            }) {
+                                Text(":\(item.port)")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(Color.accentColor.opacity(0.12))
+                                    .foregroundColor(.accentColor)
+                                    .cornerRadius(3)
+                            }
+                            .buttonStyle(.plain)
+                            .help("在浏览器打开 http://127.0.0.1:\(item.port)")
+                        }
+                        Spacer()
                     }
-                    .buttonStyle(.plain)
-                    .help("复制本地地址")
+                    .padding(.leading, 19)
+                    .padding(.top, 2)
                 }
-                .padding(.leading, 19)
-                .padding(.top, 2)
             }
 
             // Error display if any

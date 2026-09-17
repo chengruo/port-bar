@@ -23,6 +23,7 @@ SWIFT_FILES=(
     "$PROJECT_DIR/Sources/PortBar/Models/SSHHost.swift"
     "$PROJECT_DIR/Sources/PortBar/Models/PortMapping.swift"
     "$PROJECT_DIR/Sources/PortBar/Helpers/AskpassHelper.swift"
+    "$PROJECT_DIR/Sources/PortBar/Helpers/HotKeyManager.swift"
     "$PROJECT_DIR/Sources/PortBar/Services/NetworkDetector.swift"
     "$PROJECT_DIR/Sources/PortBar/Services/ConfigStore.swift"
     "$PROJECT_DIR/Sources/PortBar/Services/SSHTunnelManager.swift"

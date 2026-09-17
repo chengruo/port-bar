@@ -28,5 +28,16 @@
     <true/>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2026 PortBar. All rights reserved.</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.kalista.portbar</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>portbar</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>

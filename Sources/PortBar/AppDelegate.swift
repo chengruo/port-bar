@@ -24,15 +24,69 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         // Bind Status Changes to Status Item Appearance
         observeTunnelState()
 
+        // Setup Global HotKey (Option + P) to toggle window anywhere
+        setupGlobalHotKey()
+
         // Auto-start configured mappings
         startAutoStartMappings()
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
         SSHTunnelManager.shared.stopAll()
+        HotKeyManager.shared.unregister()
     }
 
-    // MARK: - Main Menu (Fixes Cmd+C, Cmd+V, Cmd+X, Cmd+A in accessory apps)
+    // MARK: - Global HotKey Setup (Option + P)
+
+    private func setupGlobalHotKey() {
+        HotKeyManager.shared.registerDefaultHotKey()
+        HotKeyManager.onHotKey = { [weak self] in
+            self?.toggleManagerWindow()
+        }
+    }
+
+    public func toggleManagerWindow() {
+        if let window = managerWindow, window.isVisible, NSApp.isActive {
+            window.orderOut(nil)
+            if !UserDefaults.standard.bool(forKey: "portbar_show_dock_icon") {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        } else {
+            openManagerWindow()
+        }
+    }
+
+    // MARK: - Reopen from Spotlight / Launchpad / Dock
+
+    public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        openManagerWindow()
+        return true
+    }
+
+    // MARK: - URL Scheme (portbar://open, portbar://mappings, portbar://hosts)
+
+    public func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            handleURL(url)
+        }
+    }
+
+    private func handleURL(_ url: URL) {
+        guard url.scheme == "portbar" else { return }
+
+        let host = url.host?.lowercased() ?? ""
+        let path = url.path.lowercased()
+
+        if host == "hosts" || path.contains("hosts") {
+            openManagerWindow(initialTab: .hosts)
+        } else if host == "toggle" {
+            toggleManagerWindow()
+        } else {
+            openManagerWindow(initialTab: .mappings)
+        }
+    }
+
+    // MARK: - Main Menu (Fixes Cmd+C, Cmd+V, Cmd+X, Cmd+A, Cmd+Z in accessory apps)
 
     private func setupMainMenu() {
         let mainMenu = NSMenu()
@@ -192,8 +246,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
     // MARK: - NSWindowDelegate
 
     public func windowWillClose(_ notification: Notification) {
-        // Return to accessory mode when the manager window is closed
-        NSApp.setActivationPolicy(.accessory)
+        if !UserDefaults.standard.bool(forKey: "portbar_show_dock_icon") {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 
     private func startAutoStartMappings() {

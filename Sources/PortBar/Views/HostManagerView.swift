@@ -31,6 +31,9 @@ public struct HostManagerView: View {
     @State private var selectedHostId: UUID?
     @State private var searchText: String = ""
 
+    @State private var showingPreferences: Bool = false
+    @AppStorage("portbar_show_dock_icon") private var showDockIcon: Bool = false
+
     public init(initialTab: ManagerTab = .mappings) {
         _selectedTab = State(initialValue: initialTab)
     }
@@ -48,6 +51,26 @@ public struct HostManagerView: View {
                 .frame(width: 320)
 
                 Spacer()
+
+                // Quick Shortcut Badge & Settings
+                HStack(spacing: 10) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "keyboard")
+                        Text("随时唤起: ⌥ P")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color(NSColor.controlBackgroundColor))
+                    .cornerRadius(6)
+
+                    Button(action: { showingPreferences = true }) {
+                        Image(systemName: "gearshape")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("唤起设置与防刘海指南")
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -65,6 +88,9 @@ public struct HostManagerView: View {
             }
         }
         .frame(minWidth: 820, minHeight: 560)
+        .sheet(isPresented: $showingPreferences) {
+            preferencesSheet
+        }
         .onAppear {
             if selectedMappingId == nil, let firstMapping = configStore.mappings.first {
                 selectedMappingId = firstMapping.id
@@ -72,7 +98,124 @@ public struct HostManagerView: View {
             if selectedHostId == nil, let firstHost = configStore.hosts.first {
                 selectedHostId = firstHost.id
             }
+            if showDockIcon {
+                NSApp.setActivationPolicy(.regular)
+            }
         }
+    }
+
+    private var preferencesSheet: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text("唤起方式与防刘海指南")
+                    .font(.headline)
+                Spacer()
+                Button("完成") {
+                    showingPreferences = false
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 14) {
+                // Method 1: Global Shortcut
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "keyboard.fill")
+                        .font(.title2)
+                        .foregroundColor(.blue)
+                        .frame(width: 28)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("1. 全局快捷键随时呼出 (推荐)")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("在系统的任意软件中按下 ⌥ P (Option + P)，即可立即呼出或收起 PortBar，完全无视刘海遮挡。")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                // Method 2: Spotlight / Launchpad
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "magnifyingglass.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.purple)
+                        .frame(width: 28)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("2. 聚焦搜索 (Spotlight) / 启动台")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("随时按 ⌘ 空格 输入 PortBar 回车，秒级打开控制面板。若使用 Raycast 或 Alfred 同理。")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                // Method 3: Keep in Dock toggle
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "dock.rectangle")
+                        .font(.title2)
+                        .foregroundColor(.green)
+                        .frame(width: 28)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle("3. 在 Dock 栏常驻显示图标", isOn: $showDockIcon)
+                            .font(.system(size: 13, weight: .semibold))
+                            .onChange(of: showDockIcon) {
+                                if showDockIcon {
+                                    NSApp.setActivationPolicy(.regular)
+                                } else {
+                                    NSApp.setActivationPolicy(.accessory)
+                                }
+                            }
+                        Text("开启后，PortBar 图标将常驻在屏幕底部的 Dock 栏，点击即可唤起。")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                // Method 4: Terminal command / URL Scheme
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "terminal.fill")
+                        .font(.title2)
+                        .foregroundColor(.orange)
+                        .frame(width: 28)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("4. 终端命令与 URL Scheme")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("在终端中输入 open portbar:// 即可直接唤起窗口。")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Divider()
+
+                // Method 5: Ice recommendation
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "sparkles")
+                        .font(.title2)
+                        .foregroundColor(.indigo)
+                        .frame(width: 28)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("💡 终极解决 MacBook 刘海遮挡菜单栏神器")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("推荐搭配免费开源的 Ice (菜单栏管理工具)。它能够将超长菜单栏图标折叠收起或滚动显示，彻底解决被刘海吃掉的问题！")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Button("在 GitHub 查看开源工具 Ice ➔") {
+                            if let url = URL(string: "https://github.com/jordanbaird/Ice") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                        .buttonStyle(.link)
+                        .font(.caption)
+                    }
+                }
+            }
+
+            Spacer()
+        }
+        .padding(20)
+        .frame(width: 480, height: 440)
     }
 
     // MARK: - Port Mappings Split View

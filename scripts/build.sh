@@ -43,6 +43,9 @@ swiftc \
 
 echo "📦 [4/4] 打包应用 Bundle 与配置..."
 cp "$PROJECT_DIR/Resources/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+if [ -f "$PROJECT_DIR/Resources/AppIcon.icns" ]; then
+    cp "$PROJECT_DIR/Resources/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
+fi
 chmod +x "$MACOS_DIR/PortBar"
 
 echo "✅ 构建成功！App 路径: $APP_BUNDLE"

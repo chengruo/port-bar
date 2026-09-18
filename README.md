@@ -1,10 +1,12 @@
-# PortBar 🚀
+<div align="center">
+  <img src="Resources/AppIcon.png" width="120" height="120" alt="PortBar Logo" />
+  <h1>PortBar</h1>
+  <p>专为 macOS 设计的原生菜单栏（Status Bar）SSH 端口转发与多主机管理客户端</p>
 
-[![Build & Release](https://github.com/chengruo/port-bar/actions/workflows/ci.yml/badge.svg)](https://github.com/chengruo/port-bar/actions/workflows/ci.yml)
-[![Platform](https://img.shields.io/badge/Platform-macOS%2013%2B-blue.svg)](https://apple.com/macos)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-
-**PortBar** 是一款专为 macOS 设计的原生菜单栏（Status Bar）SSH 端口转发与多主机管理工具。采用“**主机单独管理 + 端口映射列表化**”的解耦架构，秒级打通远端隧道！
+  [![Build & Release](https://github.com/chengruo/port-bar/actions/workflows/ci.yml/badge.svg)](https://github.com/chengruo/port-bar/actions/workflows/ci.yml)
+  [![Platform](https://img.shields.io/badge/Platform-macOS%2013%2B-blue.svg)](https://apple.com/macos)
+  [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+</div>
 
 ---
 

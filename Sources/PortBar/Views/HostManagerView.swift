@@ -91,6 +91,9 @@ public struct HostManagerView: View {
         .sheet(isPresented: $showingPreferences) {
             preferencesSheet
         }
+        .alert("配置操作失败", isPresented: Binding(get: { configStore.lastError != nil }, set: { if !$0 { configStore.lastError = nil } })) {
+            Button("确定") { configStore.lastError = nil }
+        } message: { Text(configStore.lastError ?? "") }
         .onAppear {
             if selectedMappingId == nil, let firstMapping = configStore.mappings.first {
                 selectedMappingId = firstMapping.id
@@ -119,7 +122,10 @@ public struct HostManagerView: View {
 
             Divider()
 
+            ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                AutomationSettingsView()
+                Divider()
                 // Method 1: Global Shortcut
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "keyboard.fill")
@@ -212,10 +218,10 @@ public struct HostManagerView: View {
                 }
             }
 
-            Spacer()
+            }
         }
         .padding(20)
-        .frame(width: 480, height: 440)
+        .frame(width: 540, height: 640)
     }
 
     // MARK: - Port Mappings Split View
@@ -547,6 +553,7 @@ public struct HostManagerView: View {
     }
 
     private func deleteHost(_ id: UUID) {
+        for item in configStore.mappings where item.hostId == id { tunnelManager.stopTunnel(for: item.id) }
         configStore.deleteHost(id: id)
         if selectedHostId == id {
             selectedHostId = configStore.hosts.first?.id

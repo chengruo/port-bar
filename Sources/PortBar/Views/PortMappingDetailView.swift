@@ -5,6 +5,7 @@ public struct PortMappingDetailView: View {
     @ObservedObject var configStore = ConfigStore.shared
     @ObservedObject var tunnelManager = SSHTunnelManager.shared
 
+    @State private var baseline: PortMapping
     @State private var mapping: PortMapping
     @State private var showingLogs: Bool = false
     @State private var showingBatchInput: Bool = false
@@ -13,6 +14,7 @@ public struct PortMappingDetailView: View {
 
     public init(mapping: PortMapping) {
         _mapping = State(initialValue: mapping)
+        _baseline = State(initialValue: mapping)
     }
 
     public var body: some View {
@@ -40,6 +42,11 @@ public struct PortMappingDetailView: View {
                 bottomBar
             }
             .padding(24)
+        }
+        .onReceive(configStore.$mappings) { mappings in
+            if let current = mappings.first(where: { $0.id == mapping.id }), current != baseline, mapping == baseline {
+                mapping = current; baseline = current
+            }
         }
         .sheet(isPresented: $showingLogs) {
             LogView(hostId: mapping.id, hostName: mapping.displayName)
@@ -91,8 +98,12 @@ public struct PortMappingDetailView: View {
 
             // Start/Stop Forwarding Button
             Button(action: {
-                configStore.updateMapping(mapping)
-                tunnelManager.toggleTunnel(for: mapping)
+                if status.isConnected || status.isConnecting {
+                    tunnelManager.stopTunnel(for: mapping.id)
+                } else if configStore.updateMapping(mapping), let saved = configStore.mapping(for: mapping.id) {
+                    mapping = saved; baseline = saved
+                    tunnelManager.startTunnel(for: saved)
+                }
             }) {
                 HStack(spacing: 6) {
                     Image(systemName: status.isConnected ? "stop.fill" : "play.fill")
@@ -396,7 +407,8 @@ public struct PortMappingDetailView: View {
             }
 
             Button("保存端口映射") {
-                configStore.updateMapping(mapping)
+                guard configStore.updateMapping(mapping), let saved = configStore.mapping(for: mapping.id) else { return }
+                mapping = saved; baseline = saved
                 withAnimation { saveConfirmation = true }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                     withAnimation { saveConfirmation = false }

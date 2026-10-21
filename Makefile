@@ -1,10 +1,13 @@
-.PHONY: all build run install clean
+.PHONY: all build run install clean test
 
 all: build
 
 build:
 	@chmod +x scripts/build.sh
 	@./scripts/build.sh
+
+test: build
+	@./scripts/test.sh
 
 run:
 	@chmod +x scripts/run.sh

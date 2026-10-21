@@ -5,6 +5,7 @@ public struct SSHHostDetailView: View {
     @ObservedObject var configStore = ConfigStore.shared
     @ObservedObject var tunnelManager = SSHTunnelManager.shared
 
+    @State private var baseline: SSHHost
     @State private var host: SSHHost
     @State private var showPasswordPlain: Bool = false
     @State private var isTestingConnection: Bool = false
@@ -13,6 +14,7 @@ public struct SSHHostDetailView: View {
 
     public init(host: SSHHost) {
         _host = State(initialValue: host)
+        _baseline = State(initialValue: host)
     }
 
     public var body: some View {
@@ -172,7 +174,8 @@ public struct SSHHostDetailView: View {
                     }
 
                     Button("保存主机配置") {
-                        configStore.updateHost(host)
+                        guard configStore.updateHost(host), let saved = configStore.host(for: host.id) else { return }
+                        host = saved; baseline = saved
                         withAnimation { saveConfirmation = true }
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                             withAnimation { saveConfirmation = false }
@@ -183,6 +186,11 @@ public struct SSHHostDetailView: View {
                 }
             }
             .padding(24)
+        }
+        .onReceive(configStore.$hosts) { hosts in
+            if let current = hosts.first(where: { $0.id == host.id }), current != baseline, host == baseline {
+                host = current; baseline = current
+            }
         }
         .alert(item: Binding(
             get: { testResultAlert.map { AlertHostItem(message: $0) } },

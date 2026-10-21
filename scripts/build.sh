@@ -6,10 +6,11 @@ BUILD_DIR="$PROJECT_DIR/build"
 APP_BUNDLE="$BUILD_DIR/PortBar.app"
 MACOS_DIR="$APP_BUNDLE/Contents/MacOS"
 RESOURCES_DIR="$APP_BUNDLE/Contents/Resources"
+HELPERS_DIR="$APP_BUNDLE/Contents/Helpers"
 CACHE_DIR="$PROJECT_DIR/.cache"
 
 echo "🔨 [1/4] 准备构建目录与缓存..."
-mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$CACHE_DIR"
+mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$HELPERS_DIR" "$CACHE_DIR"
 
 echo "⚡️ [2/4] 编译 askpass 认证桥接器..."
 clang "$PROJECT_DIR/Resources/askpass.c" -O2 -o "$RESOURCES_DIR/portbar-askpass"
@@ -32,8 +33,13 @@ SWIFT_FILES=(
     "$PROJECT_DIR/Sources/PortBar/Views/PortMappingDetailView.swift"
     "$PROJECT_DIR/Sources/PortBar/Views/HostManagerView.swift"
     "$PROJECT_DIR/Sources/PortBar/Views/MenuBarView.swift"
+    "$PROJECT_DIR/Sources/PortBar/Views/AutomationSettingsView.swift"
+    "$PROJECT_DIR/Sources/PortBar/Automation/AutomationProtocol.swift"
+    "$PROJECT_DIR/Sources/PortBar/Automation/AutomationService.swift"
+    "$PROJECT_DIR/Sources/PortBar/Automation/PortBarCLI.swift"
 )
 
+rm -f "$MACOS_DIR/PortBar"
 swiftc \
     -module-cache-path "$CACHE_DIR" \
     -Xcc -fmodules-cache-path="$CACHE_DIR" \
@@ -47,5 +53,9 @@ if [ -f "$PROJECT_DIR/Resources/AppIcon.icns" ]; then
     cp "$PROJECT_DIR/Resources/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
 fi
 chmod +x "$MACOS_DIR/PortBar"
+cp "$MACOS_DIR/PortBar" "$HELPERS_DIR/portbar"
+mkdir -p "$RESOURCES_DIR/skills"
+rm -rf "$RESOURCES_DIR/skills/portbar"
+cp -R "$PROJECT_DIR/skills/portbar" "$RESOURCES_DIR/skills/portbar"
 
 echo "✅ 构建成功！App 路径: $APP_BUNDLE"

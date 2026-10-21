@@ -3,6 +3,7 @@ import SwiftUI
 import Combine
 
 public final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    private let automationServer = AutomationServer()
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var managerWindow: NSWindow?
@@ -27,11 +28,20 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         // Setup Global HotKey (Option + P) to toggle window anywhere
         setupGlobalHotKey()
 
+        do { try automationServer.start() } catch {
+            NSLog("[PortBar] CLI server unavailable: %@", (error as? AutomationError)?.message ?? "Unknown error")
+            if (error as? AutomationError)?.code == "ALREADY_RUNNING" {
+                NSApp.terminate(nil)
+                return
+            }
+        }
+
         // Auto-start configured mappings
         startAutoStartMappings()
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
+        automationServer.stop()
         SSHTunnelManager.shared.stopAll()
         HotKeyManager.shared.unregister()
     }

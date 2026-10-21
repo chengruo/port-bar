@@ -7,11 +7,30 @@ public final class SSHTunnelManager: ObservableObject {
     @Published public var statuses: [UUID: TunnelState] = [:] // Keyed by mapping.id
     @Published public var logs: [UUID: [LogEntry]] = [:]       // Keyed by mapping.id
 
+    public private(set) var operationIDs: [UUID: String] = [:]
+    public private(set) var failureCodes: [UUID: String] = [:]
+
+    public func isManaged(_ id: UUID) -> Bool {
+        // Keep ownership until the termination callback has finalized state and timers.
+        processes[id] != nil || reconnectTimers[id] != nil
+    }
+
+    public func isStopping(_ id: UUID) -> Bool {
+        isIntentionallyStopping.contains(id) && processes[id] != nil
+    }
+
     private var processes: [UUID: Process] = [:]
     private var isIntentionallyStopping: Set<UUID> = []
     private var reconnectTimers: [UUID: Timer] = [:]
 
-    private init() {}
+    private let suppliedStore: ConfigStore?
+    private let sshExecutable: URL
+    private var configStore: ConfigStore { suppliedStore ?? .shared }
+
+    init(store: ConfigStore? = nil, sshExecutable: URL = URL(fileURLWithPath: "/usr/bin/ssh")) {
+        self.suppliedStore = store
+        self.sshExecutable = sshExecutable
+    }
 
     public var activeTunnelCount: Int {
         statuses.values.filter { $0.isConnected }.count
@@ -25,10 +44,21 @@ public final class SSHTunnelManager: ObservableObject {
         logs[mappingId] ?? []
     }
 
-    public func appendLog(for mappingId: UUID, message: String, isError: Bool = false) {
+    public func appendLog(for mappingId: UUID, message: String, isError: Bool = false, operationID: String? = nil) {
         DispatchQueue.main.async {
             var mappingLogs = self.logs[mappingId] ?? []
-            mappingLogs.append(LogEntry(message: message, isError: isError))
+            let safeMessage = self.configStore.hosts.map(\.password).filter { !$0.isEmpty }.sorted { $0.count > $1.count }
+                .reduce(message) { $0.replacingOccurrences(of: $1, with: "[REDACTED]") }
+            mappingLogs.append(LogEntry(message: safeMessage, isError: isError))
+            if isError && (operationID == nil || self.operationIDs[mappingId] == operationID) {
+                let lower = message.lowercased()
+                if lower.contains("permission denied") || lower.contains("authentication failed") { self.failureCodes[mappingId] = "AUTH_FAILED" }
+                else if lower.contains("address already in use") { self.failureCodes[mappingId] = "PORT_IN_USE" }
+                else if lower.contains("host key verification failed") || lower.contains("host identification has changed") { self.failureCodes[mappingId] = "HOST_KEY_CHANGED" }
+                else if lower.contains("could not resolve hostname") { self.failureCodes[mappingId] = "DNS_FAILED" }
+                else if lower.contains("connection refused") { self.failureCodes[mappingId] = "CONNECTION_REFUSED" }
+                else if lower.contains("timed out") { self.failureCodes[mappingId] = "CONNECT_TIMEOUT" }
+            }
             if mappingLogs.count > 500 {
                 mappingLogs.removeFirst(mappingLogs.count - 500)
             }
@@ -54,9 +84,27 @@ public final class SSHTunnelManager: ObservableObject {
     }
 
     public func startTunnel(for mapping: PortMapping) {
-        guard let host = ConfigStore.shared.host(for: mapping.hostId) else {
+        if isStopping(mapping.id) { return }
+        if status(for: mapping.id).isConnected || status(for: mapping.id).isConnecting { return }
+        operationIDs[mapping.id] = UUID().uuidString
+        failureCodes.removeValue(forKey: mapping.id)
+        guard let host = configStore.host(for: mapping.hostId) else {
             statuses[mapping.id] = .error("未找到关联的主机配置")
             appendLog(for: mapping.id, message: "❌ 启动失败: 未找到关联的主机配置", isError: true)
+            return
+        }
+
+        do {
+            try ConfigValidation.host(host)
+            try ConfigValidation.mapping(mapping)
+        } catch {
+            statuses[mapping.id] = .error((error as? AutomationError)?.message ?? "配置无效")
+            failureCodes[mapping.id] = "INVALID_ARGUMENT"
+            return
+        }
+        if let occupied = mapping.allLocalPorts.first(where: { NetworkDetector.shared.isLocalPortListening(port: $0) }) {
+            statuses[mapping.id] = .error("本地端口 \(occupied) 已被占用")
+            failureCodes[mapping.id] = "PORT_IN_USE"
             return
         }
 
@@ -83,10 +131,11 @@ public final class SSHTunnelManager: ObservableObject {
         appendLog(for: mapping.id, message: "跳板主机: [\(host.displayName)] \(host.username)@\(host.host):\(host.port)")
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        process.executableURL = self.sshExecutable
 
         var arguments = [
             "-N", // Do not execute a remote command
+            "-o", "ConnectTimeout=10",
             "-p", String(host.port),
             "-o", "ExitOnForwardFailure=yes",
             "-o", "ServerAliveInterval=15",
@@ -99,12 +148,13 @@ public final class SSHTunnelManager: ObservableObject {
         case .localPort:
             for rule in mapping.portRules {
                 arguments.append("-L")
-                arguments.append("\(rule.localPort):\(rule.remoteHost):\(rule.remotePort)")
+                let target = rule.remoteHost.contains(":") && !rule.remoteHost.hasPrefix("[") ? "[\(rule.remoteHost)]" : rule.remoteHost
+                arguments.append("127.0.0.1:\(rule.localPort):\(target):\(rule.remotePort)")
                 appendLog(for: mapping.id, message: "  ➔ 转发项: 127.0.0.1:\(rule.localPort) ➔ \(rule.remoteHost):\(rule.remotePort)")
             }
         case .socks5:
             arguments.append("-D")
-            arguments.append("\(mapping.socks5Port)")
+            arguments.append("127.0.0.1:\(mapping.socks5Port)")
             appendLog(for: mapping.id, message: "  ➔ SOCKS5 代理监听: 127.0.0.1:\(mapping.socks5Port)")
         }
 
@@ -125,6 +175,7 @@ public final class SSHTunnelManager: ObservableObject {
             }
         }
 
+        if trimmedPassword.isEmpty { arguments += ["-o", "BatchMode=yes"] }
         arguments.append("\(host.username)@\(host.host)")
 
         process.arguments = arguments
@@ -132,6 +183,7 @@ public final class SSHTunnelManager: ObservableObject {
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
+        let operationID = operationIDs[mapping.id]
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
@@ -151,7 +203,7 @@ public final class SSHTunnelManager: ObservableObject {
             guard !data.isEmpty, let str = String(data: data, encoding: .utf8) else { return }
             let lines = str.components(separatedBy: .newlines).filter { !$0.isEmpty }
             for line in lines {
-                self?.appendLog(for: mapping.id, message: line, isError: true)
+                self?.appendLog(for: mapping.id, message: line, isError: true, operationID: operationID)
             }
         }
 
@@ -161,6 +213,7 @@ public final class SSHTunnelManager: ObservableObject {
             stderrPipe.fileHandleForReading.readabilityHandler = nil
 
             DispatchQueue.main.async {
+                guard self.processes[mapping.id] === proc else { return }
                 self.processes.removeValue(forKey: mapping.id)
                 let intentional = self.isIntentionallyStopping.contains(mapping.id)
 
@@ -170,7 +223,10 @@ public final class SSHTunnelManager: ObservableObject {
                 } else {
                     let code = proc.terminationStatus
                     let errMsg = "SSH 进程意外退出 (代码: \(code))"
-                    self.statuses[mapping.id] = .error(errMsg)
+                    if self.failureCodes[mapping.id] != "READINESS_TIMEOUT" {
+                        self.statuses[mapping.id] = .error(errMsg)
+                    }
+                    if self.failureCodes[mapping.id] == nil { self.failureCodes[mapping.id] = "SSH_FAILED" }
                     self.appendLog(for: mapping.id, message: "❌ \(errMsg)", isError: true)
 
                     // Auto reconnect if enabled
@@ -198,6 +254,10 @@ public final class SSHTunnelManager: ObservableObject {
     }
 
     public func stopTunnel(for mappingId: UUID) {
+        if isStopping(mappingId) { return }
+        if isManaged(mappingId) || status(for: mappingId) != .disconnected {
+            operationIDs[mappingId] = UUID().uuidString
+        }
         reconnectTimers[mappingId]?.invalidate()
         reconnectTimers.removeValue(forKey: mappingId)
 
@@ -211,7 +271,7 @@ public final class SSHTunnelManager: ObservableObject {
     }
 
     public func stopAll() {
-        for mappingId in processes.keys {
+        for mappingId in Set(processes.keys).union(reconnectTimers.keys) {
             stopTunnel(for: mappingId)
         }
     }
@@ -220,13 +280,10 @@ public final class SSHTunnelManager: ObservableObject {
 
     private func monitorPortConnection(for mapping: PortMapping, process: Process) {
         var attempts = 0
-        let maxAttempts = 25 // 25 * 200ms = 5s
+        let maxAttempts = 60 // 12s: allow SSH ConnectTimeout to report a useful error
         let portsToCheck = mapping.allLocalPorts
 
-        guard let firstPort = portsToCheck.first else {
-            statuses[mapping.id] = .connected
-            return
-        }
+        guard !portsToCheck.isEmpty else { return }
 
         Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] timer in
             guard let self = self else {
@@ -234,15 +291,18 @@ public final class SSHTunnelManager: ObservableObject {
                 return
             }
 
-            guard process.isRunning else {
+            guard self.processes[mapping.id] === process, process.isRunning,
+                  !self.isIntentionallyStopping.contains(mapping.id) else {
                 timer.invalidate()
                 return
             }
 
             attempts += 1
-            if NetworkDetector.shared.isLocalPortListening(port: firstPort) {
+            if portsToCheck.allSatisfy({ NetworkDetector.shared.isLocalPortListening(port: $0) }) {
                 timer.invalidate()
                 DispatchQueue.main.async {
+                    guard self.processes[mapping.id] === process, process.isRunning,
+                          !self.isIntentionallyStopping.contains(mapping.id) else { return }
                     self.statuses[mapping.id] = .connected
                     let portList = portsToCheck.map { String($0) }.joined(separator: ", ")
                     self.appendLog(for: mapping.id, message: "✅ 隧道已成功建立！正在监听本地端口: \(portList)")
@@ -253,9 +313,11 @@ public final class SSHTunnelManager: ObservableObject {
             if attempts >= maxAttempts {
                 timer.invalidate()
                 DispatchQueue.main.async {
-                    if case .connecting = self.statuses[mapping.id] {
-                        self.statuses[mapping.id] = .connected
-                        self.appendLog(for: mapping.id, message: "⚡️ SSH 进程已就绪 (标记为运行状态)")
+                    if self.processes[mapping.id] === process, case .connecting = self.statuses[mapping.id] {
+                        self.failureCodes[mapping.id] = "READINESS_TIMEOUT"
+                        self.statuses[mapping.id] = .error("等待本地端口监听超时")
+                        self.appendLog(for: mapping.id, message: "等待本地端口监听超时", isError: true)
+                        process.terminate()
                     }
                 }
             }
@@ -267,7 +329,7 @@ public final class SSHTunnelManager: ObservableObject {
     public func testConnection(host: SSHHost, completion: @escaping (Bool, String) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+            process.executableURL = self.sshExecutable
 
             var arguments = [
                 "-p", String(host.port),

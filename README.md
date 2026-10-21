@@ -74,6 +74,95 @@ make install
 
 ---
 
+## CLI 与本地 AI
+
+PortBar 提供 CLI 和配套 [Skill](skills/portbar/SKILL.md)。CLI 与界面操作同一个应用实例，配置和 SSH 进程由应用统一管理。无需 MCP 或 Python 运行时。
+
+### 启用与安装
+
+1. 打开 PortBar 管理窗口，点击设置，在“AI 与 CLI 自动化”中选择权限。默认关闭；可选只读、查询与隧道控制、查询控制与配置编辑。
+2. 点击“复制 CLI 命令”可立即使用完整路径。也可点击“安装 CLI…”选择 PATH 中的 bin 目录，创建 `portbar` 链接；不会覆盖已有文件。
+3. 点击“安装 AI Skill…”选择 AI 客户端的 skills 目录。应用会创建 `portbar/SKILL.md`，然后按客户端的方式刷新 Skill。安装 Skill 不会自动授予 CLI 权限。
+
+未安装到 PATH 时，也可以直接使用：
+
+```bash
+/Applications/PortBar.app/Contents/Helpers/portbar --help
+# 从当前仓库构建时
+./build/PortBar.app/Contents/Helpers/portbar --help
+```
+
+CLI 不会自动启动应用；应用未运行时返回 `APP_NOT_RUNNING`。手动启动应用仍会触发原有 `autoStart` 配置。应用退出会断开隧道。
+
+### 常用操作
+
+```bash
+portbar capabilities --json
+portbar hosts list --json
+portbar mappings list --search dev --json
+portbar tunnels start --mapping-id <UUID> --wait --timeout 15 --json
+portbar tunnels status --mapping-id <UUID> --json
+portbar tunnels diagnose --mapping-id <UUID> --json
+portbar logs list --mapping-id <UUID> --limit 30 --json
+portbar tunnels stop --mapping-id <UUID> --wait --json
+portbar schema --json
+```
+
+`--json` 保证 stdout 为单个 JSON 对象，失败包含 `ok: false` 和 `error.code/message`，并返回非零退出码。退出码：0 成功、2 参数错误、3 应用不可用或通信失败、4 权限不足、5 操作失败、6 等待超时。列表默认最多 100 条，`--limit` 支持 1–500；资源操作使用 UUID，名称搜索仅用于发现。
+
+`connected` 代表所有本地端口已监听，不代表远端数据库或网站健康。重复启动已连接隧道不会重连。启停响应包含 `operationId`；`--wait` 在操作被替代时返回 `OPERATION_SUPERSEDED`。等待超时不会取消操作，请先查询状态。
+
+### 创建与修改配置
+
+```bash
+# 先取得主机 UUID，然后写入 mapping.json：
+cat > mapping.json <<'JSON'
+{
+  "name": "开发数据库",
+  "hostId": "替换为主机 UUID",
+  "forwardType": "local_port",
+  "portRules": [
+    { "localPort": 13306, "remoteHost": "127.0.0.1", "remotePort": 3306 }
+  ],
+  "autoReconnect": false,
+  "autoStart": false
+}
+JSON
+portbar mappings create --file mapping.json --dry-run --json
+# 使用预检查响应中的顶层 revision 提交：
+portbar mappings create --file mapping.json --if-revision <REVISION> --json
+```
+
+主机支持 `hosts create/update/delete`，映射支持 `mappings create/update/delete`。创建主机至少提供 `host`；创建映射至少提供 `hostId`。修改仅替换提供的字段，`portRules` 作为完整数组替换；不接受 null、未知字段、密码或私钥。完整字段和默认值见 `portbar schema --json`、`portbar --help`。JSON 文件限制 256 KiB，也可用 `--file -` 从 stdin 输入。
+
+`--dry-run` 返回脱敏后的 before/after、受影响映射 ID 和当前 revision，不写入配置。创建预览中的 UUID 为临时值，后续操作应使用实际提交返回的 UUID。`--if-revision` 可防止覆盖其他操作刚保存的配置；冲突时重新读取并预检查。配置成功写盘后才向调用方报告成功。
+
+修改或删除运行中的资源会返回 `RESOURCE_BUSY`；请先停止相关隧道及自动重连。删除有关联映射的主机需要显式 `--cascade`，可先 `--dry-run` 查看范围。保存不会立即启动连接，`autoStart` 在下次应用启动时生效。
+
+### Skill 与访问边界
+
+Skill 随应用打包、与 CLI 同步发布，也可手动安装到客户端的 skills 目录：
+
+```bash
+portbar skill install --directory /path/to/client/skills --json
+```
+
+目标 `portbar` 目录已存在时拒绝覆盖。未安装 Skill 也可直接使用 CLI。
+
+本地接口使用 `/tmp/portbar-<uid>/control.sock`，目录权限 0700、socket 权限 0600，并检查调用进程的用户 ID。访问权限适用于同一 macOS 用户下的所有本地程序，不提供按 AI 客户端隔离。密码字段不对 CLI 开放，返回的备注和日志会替换已保存的密码；请勿将其他凭据写入备注。新增保存的配置文件权限为 0600。CLI 不提供任意远程命令执行。
+
+关闭 CLI 权限会拒绝后续请求，已有连接继续运行，可在界面中停止。设置页和 `activity list` 展示本次应用运行中最近 100 次调用的时间、命令和结果码，不记录请求内容。
+
+### 验证
+
+```bash
+make test
+```
+
+测试使用独立临时配置和本地模拟 SSH 进程，覆盖权限、预检查、版本冲突、保存失败、脱敏、隧道幂等操作、多端口就绪判断，以及实际打包 CLI 的跨进程调用与 Skill 安装，不连接真实服务器或修改用户配置。
+
+---
+
 ## 🤝 开源与贡献
 
 欢迎提交 Issue 或 Pull Request 共同改进 PortBar！

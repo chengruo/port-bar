@@ -115,7 +115,9 @@ print("✅ [4/5] askpass 认证桥接测试通过！")
 
 // 5. Test ConfigStore operations
 print("▶️ [5/5] 测试 ConfigStore 主机与多端口映射操作...")
-let store = ConfigStore.shared
+let testDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("portbar-model-tests-\(UUID().uuidString)")
+defer { try? FileManager.default.removeItem(at: testDirectory) }
+let store = ConfigStore(directory: testDirectory, seedDemo: false)
 let newHost = SSHHost(name: "临时主机", host: "1.1.1.1", username: "root")
 store.addHost(newHost)
 let newMapping = PortMapping(

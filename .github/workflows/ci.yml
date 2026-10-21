@@ -31,19 +31,7 @@ jobs:
 
       - name: Run Automated Tests
         run: |
-          swiftc \
-            -module-cache-path .cache \
-            -Xcc -fmodules-cache-path=.cache \
-            Sources/PortBar/Models/TunnelStatus.swift \
-            Sources/PortBar/Models/SSHHost.swift \
-            Sources/PortBar/Models/PortMapping.swift \
-            Sources/PortBar/Helpers/AskpassHelper.swift \
-            Sources/PortBar/Services/NetworkDetector.swift \
-            Sources/PortBar/Services/ConfigStore.swift \
-            Tests/PortBarTests/main.swift \
-            -o Tests/run_tests
-          ./Tests/run_tests
-          rm -f Tests/run_tests
+          ./scripts/test.sh
 
       - name: Package Release Archive
         run: |
@@ -67,4 +55,5 @@ jobs:
           files: |
             build/PortBar-macOS.zip
             build/PortBar-macOS.zip.sha256
+          body_path: docs/releases/${{ github.ref_name }}.md
           generate_release_notes: true
